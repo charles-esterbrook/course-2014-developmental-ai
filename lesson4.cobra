@@ -1,0 +1,540 @@
+"""
+== Sources
+
+ * http://developmental-learning-tutorial.googlecode.com/svn/trunk
+ 
+Differences with Java code:
+
+ * The Interaction class is split into PrimitiveInteraction and CompositeInteraction
+ * The Existence class is split into Agent and Environment.
+ * No inheritance with previous lesson code bases. Much less typecasting/downcasting.
+ * Rename 'experience' to 'experiment'.
+ * Track mood history and count.
+ * Dump agent state at the end.
+ * Track clock including the time at which other objects are created.  to-do
+ * Cobra distinguishes between nullable and non-nullable types (String? vs. String for example).
+"""
+
+
+class BaseObject is abstract
+	"""
+	Provides a unique id number.
+	Provides a .toString of the form:
+		ClassName(x=X, y=Y)
+	Subclasses override _toString.
+	"""
+	
+	shared
+	
+		var _nextIdValue = 999
+		
+		def _nextId as int
+			_nextIdValue += 1
+			return _nextIdValue
+			
+	cue init
+		base.init
+		_id = _nextId
+		
+	get id from var as int
+	
+	def toString as String is override
+		sb = StringBuilder('[.typeOf.name]([.id]')
+		_toString(sb)
+		sb.append(')')
+		return sb.toString
+	
+	def _toString(sb as StringBuilder)
+		pass
+
+
+class Experiment inherits BaseObject
+
+	test
+		assert Experiment('e1', false).label == 'e1'
+		assert Experiment('e1', false) == Experiment('e1', false)
+		assert Experiment('e1', false) <> Experiment('e2', false)
+
+	cue init(label as String, isAbstract as bool)
+		base.init
+		_label, _isAbstract = label, isAbstract
+		
+	get label from var as String
+
+	get isAbstract from var as bool
+	
+	pro intendedInteraction from var as Interaction?
+	
+	def _toString(sb as StringBuilder)
+		base._toString(sb)
+		sb.append(', [.label.toTechString]')
+		if .isAbstract, sb.append(', abstract')
+		if .intendedInteraction, sb.append(', intended=[.intendedInteraction]')
+		
+	def equals(obj) as bool is override
+		if obj inherits Experiment, return .label == obj.label
+		return false
+
+	def getHashCode as int is override
+		return .label.getHashCode
+
+
+class Result inherits BaseObject
+
+	test
+		assert Result('r1').label == 'r1'
+		assert Result('r1') == Result('r1')
+		assert Result('r1') <> Result('r2')
+
+	cue init(label as String)
+		base.init
+		_label = label
+		
+	get label from var as String
+
+	def _toString(sb as StringBuilder)
+		base._toString(sb)
+		sb.append(', [.label.toTechString]')
+		
+	def equals(obj) as bool is override
+		if obj inherits Result, return .label == obj.label
+		return false
+
+	def getHashCode as int is override
+		return .label.getHashCode
+
+
+class Interaction inherits BaseObject is abstract
+	"""
+	The base class of all interactions.
+	"""
+
+	cue init(label as String)
+		require label.length
+		base.init
+		_label = label
+
+	get label from var as String
+	
+	pro weight from var = 0
+	
+	def incWeight(amount = 1)
+		ensure .weight == old .weight + amount
+		_weight += amount
+
+	pro valence from var as int
+
+	def _toString(sb as StringBuilder)
+		base._toString(sb)
+		sb.append(', [.label], valence=[.valence], weight=[.weight]')
+
+
+class PrimitiveInteraction inherits Interaction
+	""" Records a primitive interaction consisting of an experiment and result. """
+
+	shared
+	
+		def labelFor(experiment as Experiment, res as Result) as String
+			return experiment.label + '-' + res.label
+
+	cue init(exp as Experiment, res as Result)
+		.init(nil, exp, res)
+
+	cue init(label as String?, exp as Experiment, res as Result)
+		base.init(label ? .labelFor(exp, res))
+		_experiment, _result = exp, res
+
+	pro experiment from var as Experiment
+	
+	pro result from var as Result
+
+
+class CompositeInteraction inherits Interaction
+	""" Records a pre- and post-interaction together. """
+
+	shared
+	
+		def labelFor(pre as Interaction, post_ as Interaction) as String
+			return '(' + pre.label + ', ' + post_.label + ')'
+			
+	cue init(pre as Interaction, post_ as Interaction)
+		base.init(.labelFor(pre, post_))
+		_preInteraction, _postInteraction = pre, post_
+		_valence = _preInteraction.valence + _postInteraction.valence
+
+	get preInteraction from var as Interaction
+	
+	get postInteraction from var as Interaction
+
+	var _abstractExperiment as Experiment?
+	
+	pro abstractExperiment as Experiment?
+		get
+			return _abstractExperiment
+		set
+			require value.isAbstract
+			_abstractExperiment = value
+
+
+enum Mood
+	SelfSatisfied, Frustrated, Bored, Pained, Pleased
+
+
+class Agent40 inherits BaseObject
+	"""
+	Lesson 4
+	Two step self programming.
+	"""
+	
+	var _environment as Environment
+	
+	var _experiments = Dictionary<of String, Experiment>()
+	var _results = Dictionary<of String, Result>()
+	var _interactions = Dictionary<of String, Interaction>()
+	var _previousSuperInteraction as CompositeInteraction?
+	var _lastSuperInteraction as CompositeInteraction?
+	var _lastEnactedInteraction as Interaction?
+
+	def dump
+		indent = ' '.repeat(4)
+		print
+		print this
+		print
+		print 'Experiments:'
+		for exp in _experiments.values, print '[indent][exp]'
+		print
+		print 'Results:'
+		for res in _results.values, print '[indent][res]'
+		print
+		print 'Interactions:'
+		for interaction in _interactions.values, print '[indent][interaction]'
+		print
+		print 'Mood History:'
+		print '[indent][.moodHistory]'
+		print
+		print 'Mood Counts:'
+		moods = .moodCounts.toList
+		moods.sort(do(a as KeyValuePair<of Mood, int>, b as KeyValuePair<of Mood, int>)=b.value.compareTo(a.value))
+		for mood in moods, print '[indent][mood.value.toString.padLeft(2)] - [mood.key]'
+		
+	cue init(environment as Environment)
+		base.init
+		_environment = environment
+		.initPrimitives
+
+	get name as String
+		return .typeOf.name
+
+	get clock from var = 0
+	
+	get mood from var as Mood
+	
+	get moodHistory from var = List<of Mood>()
+	
+	get moodCounts from var = Dictionary<of Mood, int>()
+
+	def initPrimitives
+		e1, e2 = .experiment('e1', false), .experiment('e2', false)
+		r1, r2 = .result('r1'), .result('r2')
+		i11 = .primitiveInteraction(e1, r1, -1)
+		i12 = .primitiveInteraction(e1, r2, +1)
+		i21 = .primitiveInteraction(e2, r1, -1)
+		i22 = .primitiveInteraction(e2, r2, +1)
+		e1.intendedInteraction = i12
+		e2.intendedInteraction = i22
+		CobraCore.noOp(i11, i21)
+
+	def experiment(label as String, isAbstract as bool) as Experiment
+		""" Return the experiment with the given label, creating it if necessary. Cached. """
+		if not _experiments.containsKey(label), _experiments[label] = Experiment(label, isAbstract)
+		return _experiments[label]
+	
+	def result(label as String) as Result
+		""" Return the result with the given label, creating it if necessary. Cached. """
+		if not _results.containsKey(label), _results[label] = Result(label)
+		return _results[label]
+
+	def primitiveInteraction(exp as Experiment, res as Result, valence as int? = nil) as PrimitiveInteraction
+		""" Return the primitive interaction with the given experiment+result, creating it if necessary. Cached. Valence is updated. """
+		label = PrimitiveInteraction.labelFor(exp, res)
+		if not _interactions.containsKey(label), _interactions[label] = PrimitiveInteraction(exp, res)
+		interaction = _interactions[label] to PrimitiveInteraction
+		if valence, interaction.valence = valence
+		return interaction
+
+	def run(numSteps as int)
+		for i in numSteps, .step
+
+	def step
+		_clock += 1
+		.printStepStart
+		.interact
+		.recordMood
+		.printStepEnd
+	
+	def printStepStart
+		print
+		print 'Start [.clock]:'
+
+	def recordMood
+		_moodHistory.add(_mood)
+		if not _moodCounts.containsKey(_mood), _moodCounts[_mood] = 0
+		_moodCounts[_mood] += 1
+
+	def printStepEnd
+		if true
+			print 'previousSuperInteraction: [_previousSuperInteraction]'
+			print 'lastSuperInteraction:     [_lastSuperInteraction]'
+			print 'lastEnactedInteraction:   [_lastEnactedInteraction]'
+		print 'End [.clock]: [.mood]'
+
+	def interact
+		anticipations = .anticipate
+		experiment = .selectExperiment(anticipations)
+		intendedInteraction = experiment.intendedInteraction to !
+		enactedInteraction = .enact(intendedInteraction)
+		print 'enacted [enactedInteraction]'
+		if enactedInteraction <> intendedInteraction and experiment.isAbstract
+			failResult = .result(enactedInteraction.label.replace('e', 'E').replace('r', 'R') + '>')
+			enactedInteraction = .primitiveInteraction(experiment, failResult, enactedInteraction.valence)
+		.computeMood(enactedInteraction)
+		.learnCompositeInteraction(enactedInteraction)
+		_previousSuperInteraction = _lastSuperInteraction
+		_lastEnactedInteraction = enactedInteraction
+
+	def selectExperiment(anticipations as List<of Anticipation>) as Experiment
+		require anticipations.count > 0  # all experiments are proposed by default with a proclivity of 0
+		max = anticipations[0]
+		for anticipation in anticipations
+			print 'propose [anticipation]'
+			if anticipation.proclivity > max.proclivity, max = anticipation
+		print 'max proposal [max]'
+		return max.experiment
+
+	def enact(intendedInteraction as Interaction) as Interaction
+		if intendedInteraction inherits PrimitiveInteraction
+			return .enactPrimitive(intendedInteraction)
+		if intendedInteraction inherits CompositeInteraction
+			return .enactComposite(intendedInteraction)
+		throw FallThroughException(intendedInteraction)
+	
+	def enactPrimitive(intendedInteraction as PrimitiveInteraction) as Interaction
+		experiment = intendedInteraction.experiment
+		result = _environment.enact(experiment)
+		return .primitiveInteraction(experiment, result)
+
+	def enactComposite(intendedInteraction as CompositeInteraction) as Interaction
+		# enact the preInteraction
+		enactedPreInteraction = .enact(intendedInteraction.preInteraction)
+		if enactedPreInteraction <> intendedInteraction.preInteraction
+			# if the preInteraction failed then the enaction of the intendedInteraction is interrupted here.
+			return enactedPreInteraction
+		else
+			# enact the postInteraction
+			enactedPostInteraction = .enact(intendedInteraction.postInteraction)
+			return .compositeInteraction(enactedPreInteraction, enactedPostInteraction)
+
+	def computeMood(enactedInteraction as Interaction)
+		if enactedInteraction.valence > 0
+			_mood = Mood.Pleased
+		else
+			_mood = Mood.Pained
+
+	def learnCompositeInteraction(enactedInteraction as Interaction)
+		previousInteraction = _lastEnactedInteraction
+		lastInteraction = enactedInteraction
+		previousSuperInteraction = _previousSuperInteraction
+		lastSuperInteraction as CompositeInteraction?
+        # learn [previous current] called the super interaction
+		if previousInteraction
+			lastSuperInteraction = _learnCompositeInteraction(previousInteraction, lastInteraction)
+		# learn higher-level interactions
+		if previousSuperInteraction  # and previousInteraction.isPrimitive and lastInteraction.isPrimitive
+			# learn [penultimate [previous current]]
+			if lastSuperInteraction
+				_learnCompositeInteraction(previousSuperInteraction.preInteraction, lastSuperInteraction)
+			# learn [[penultimate previous] current]
+			_learnCompositeInteraction(previousSuperInteraction, lastInteraction)
+		_lastSuperInteraction = lastSuperInteraction
+
+	def _learnCompositeInteraction(preInteraction as Interaction, postInteraction as Interaction) as CompositeInteraction
+		compositeInteraction = .compositeInteraction(preInteraction, postInteraction)
+		compositeInteraction.incWeight
+		what = if(compositeInteraction.weight == 1, 'learn', 'reinforce')
+		print '[what] [compositeInteraction]'
+		return compositeInteraction
+
+	def compositeInteraction(preInteraction as Interaction, postInteraction as Interaction) as CompositeInteraction
+		"""
+		Return the composite interaction with the given pre and post, creating it if necessary. Cached. 
+		If a new composite interaction is created, then a new abstract experiment is also created and associated to it.
+		"""
+		label = CompositeInteraction.labelFor(preInteraction, postInteraction)
+		if not _interactions.containsKey(label)
+			interaction = CompositeInteraction(preInteraction, postInteraction)
+			_interactions[label] = interaction
+			.abstractExperimentFor(interaction)
+		return _interactions[label] to CompositeInteraction
+
+	def abstractExperimentFor(interaction as CompositeInteraction) as Experiment
+		label = interaction.label.replace('e', 'E').replace('r', 'R').replace(')', '|')
+		if not _experiments.containsKey(label)
+			abstractExperiment = .experiment(label, true)
+			abstractExperiment.intendedInteraction = interaction
+			interaction.abstractExperiment = abstractExperiment
+			_experiments[label] = abstractExperiment
+		return _experiments[label]
+			
+	def anticipate as List<of Anticipation>
+		anticipations = .defaultAnticipations
+		if _lastEnactedInteraction
+			for activatedInteraction in .activatedInteractions
+				postInteraction = activatedInteraction.postInteraction
+				# to-do: check which of these are executing
+				if postInteraction inherits PrimitiveInteraction, experiment = postInteraction.experiment
+				else if postInteraction inherits CompositeInteraction, experiment = postInteraction.abstractExperiment to !
+				else, throw FallThroughException(postInteraction)
+				proclivity = activatedInteraction.weight * activatedInteraction.postInteraction.valence
+				proposition = Anticipation(experiment, proclivity)
+				index = anticipations.indexOf(proposition)
+				if index < 0, anticipations.add(proposition)
+				else, anticipations[index].incProclivity(proclivity)
+        return anticipations
+
+	def defaultAnticipations as List<of Anticipation>
+		return for experiment in _experiments.values where not experiment.isAbstract get Anticipation(experiment)
+
+	def activatedInteractions as List<of CompositeInteraction>
+		contextInteractions = List<of Interaction>()  # can definitely have both primitive and composite interactions
+		if _lastEnactedInteraction
+			contextInteractions.add(_lastEnactedInteraction)
+			if _lastEnactedInteraction inherits CompositeInteraction
+				if _lastEnactedInteraction.postInteraction inherits CompositeInteraction # to-do: is this always true?
+					contextInteractions.add(_lastEnactedInteraction.postInteraction)
+			if _lastSuperInteraction
+				contextInteractions.add(_lastSuperInteraction)
+		activatedInteractions = List<of CompositeInteraction>()
+		for interaction in _interactions.values
+			if interaction inherits CompositeInteraction
+				if contextInteractions.contains(interaction.preInteraction)
+					activatedInteractions.add(interaction)
+					print 'activated [interaction]'
+		return activatedInteractions
+
+
+class Anticipation inherits BaseObject
+
+	cue init(exp as Experiment, proclivity = 0)
+		base.init
+		_experiment, _proclivity = exp, proclivity
+		
+	get experiment from var as Experiment
+
+	get proclivity from var as int
+	
+	def incProclivity(amount = 1)
+		ensure .proclivity == old .proclivity + amount
+		_proclivity += amount
+
+	def _toString(sb as StringBuilder)
+		base._toString(sb)
+		sb.append(', [.experiment], proclivity=[.proclivity]')
+
+	def equals(other) as bool is override
+		if other inherits Anticipation, return other.experiment == .experiment
+		return false
+	
+	def getHashCode as int is override
+		return .experiment.getHashCode
+
+
+class Environment inherits BaseObject is abstract
+
+	get name as String
+		return .typeOf.name
+
+	def enact(experiment as Experiment) as Result is abstract
+
+
+class FixedEnvironment inherits Environment
+	"""
+	A simplistic environment that always returns the same result.
+	"""
+	
+	cue init(res as Result? = nil)
+		base.init
+		_result = res ? Result('r1')
+	
+	get result from var as Result
+	
+	def enact(experiment as Experiment) as Result is override
+		return  .result
+
+
+class Environment10 inherits Environment
+	"""
+	Simple environment where e1 -> r1, else r2.
+	"""
+	
+	def enact(experiment as Experiment) as Result is override
+		if experiment == Experiment('e1', false), return Result('r1')
+		else, return Result('r2')
+
+
+class Environment30 inherits Environment
+	"""
+	Results in R1 when the current experience equals the previous experience
+	and in R2 when the current experience differs from the previous experience.
+	"""
+
+	var _previousExperiment as Experiment?
+
+	def enact(experiment as Experiment) as Result is override
+		if _previousExperiment == experiment
+			result = Result('r1')
+		else
+			result = Result('r2')
+		_previousExperiment = experiment
+		return result
+
+
+class Environment40 inherits Environment
+	"""
+	Results in R2 when the current experiment equals the previous experiment and differs from the penultimate experiment,
+	and in R1 otherwise.
+	e1->r1 e1->r2 e2->r1 e2->r2 etc.
+	"""
+
+	cue init
+		base.init
+		_previousExperiment = _penultimateExperiment = Experiment('nil', false)
+
+	get previousExperiment from var as Experiment
+	get penultimateExperiment from var as Experiment
+
+	def enact(experiment as Experiment) as Result is override
+		# to-do: share the result objects with the agent?
+		if .penultimateExperiment <> experiment _
+		and .previousExperiment == experiment
+			result = Result('r2')
+		else
+			result = Result('r1')
+		_penultimateExperiment = .previousExperiment
+		_previousExperiment = experiment
+		trace experiment, result
+		return result
+
+
+class Program
+
+	def main
+		env = Environment40()
+		agent = Agent40(env)
+		print 'Running agent [agent.name] with [env.name]'
+		agent.run(20)
+		agent.dump
+		
+		if false
+			print
+			print 'Press Enter...'
+			Console.readLine
