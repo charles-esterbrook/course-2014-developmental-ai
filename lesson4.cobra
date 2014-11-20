@@ -180,47 +180,15 @@ enum Mood
 	SelfSatisfied, Frustrated, Bored, Pained, Pleased
 
 
-class Agent40 inherits BaseObject
-	"""
-	Lesson 4
-	Two step self programming.
-	"""
-	
+class Agent inherits BaseObject is abstract
+
 	var _environment as Environment
-	
 	var _experiments = Dictionary<of String, Experiment>()
 	var _results = Dictionary<of String, Result>()
-	var _interactions = Dictionary<of String, Interaction>()
-	var _previousSuperInteraction as CompositeInteraction?
-	var _lastSuperInteraction as CompositeInteraction?
-	var _lastEnactedInteraction as Interaction?
 
-	def dump
-		indent = ' '.repeat(4)
-		print
-		print this
-		print
-		print 'Experiments:'
-		for exp in _experiments.values, print '[indent][exp]'
-		print
-		print 'Results:'
-		for res in _results.values, print '[indent][res]'
-		print
-		print 'Interactions:'
-		for interaction in _interactions.values, print '[indent][interaction]'
-		print
-		print 'Mood History:'
-		print '[indent][.moodHistory]'
-		print
-		print 'Mood Counts:'
-		moods = .moodCounts.toList
-		moods.sort(do(a as KeyValuePair<of Mood, int>, b as KeyValuePair<of Mood, int>)=b.value.compareTo(a.value))
-		for mood in moods, print '[indent][mood.value.toString.padLeft(2)] - [mood.key]'
-		
 	cue init(environment as Environment)
 		base.init
 		_environment = environment
-		.initPrimitives
 
 	get name as String
 		return .typeOf.name
@@ -233,17 +201,6 @@ class Agent40 inherits BaseObject
 	
 	get moodCounts from var = Dictionary<of Mood, int>()
 
-	def initPrimitives
-		e1, e2 = .experiment('e1', false), .experiment('e2', false)
-		r1, r2 = .result('r1'), .result('r2')
-		i11 = .primitiveInteraction(e1, r1, -1)
-		i12 = .primitiveInteraction(e1, r2, +1)
-		i21 = .primitiveInteraction(e2, r1, -1)
-		i22 = .primitiveInteraction(e2, r2, +1)
-		e1.intendedInteraction = i12
-		e2.intendedInteraction = i22
-		CobraCore.noOp(i11, i21)
-
 	def experiment(label as String, isAbstract as bool) as Experiment
 		""" Return the experiment with the given label, creating it if necessary. Cached. """
 		if not _experiments.containsKey(label), _experiments[label] = Experiment(label, isAbstract)
@@ -253,14 +210,6 @@ class Agent40 inherits BaseObject
 		""" Return the result with the given label, creating it if necessary. Cached. """
 		if not _results.containsKey(label), _results[label] = Result(label)
 		return _results[label]
-
-	def primitiveInteraction(exp as Experiment, res as Result, valence as int? = nil) as PrimitiveInteraction
-		""" Return the primitive interaction with the given experiment+result, creating it if necessary. Cached. Valence is updated. """
-		label = PrimitiveInteraction.labelFor(exp, res)
-		if not _interactions.containsKey(label), _interactions[label] = PrimitiveInteraction(exp, res)
-		interaction = _interactions[label] to PrimitiveInteraction
-		if valence, interaction.valence = valence
-		return interaction
 
 	def run(numSteps as int)
 		for i in numSteps, .step
@@ -276,19 +225,117 @@ class Agent40 inherits BaseObject
 		print
 		print 'Start [.clock]:'
 
+	def printStepEnd
+		print 'End [.clock]: [.mood]'
+
+	def interact is abstract
+		"""
+		Subclasses must override to invoke _environment.enact and set _mood.
+		"""
+
 	def recordMood
 		_moodHistory.add(_mood)
 		if not _moodCounts.containsKey(_mood), _moodCounts[_mood] = 0
 		_moodCounts[_mood] += 1
+
+	var _indent = ' '.repeat(4)
+
+	def dump
+		_dumpHeader
+		_dumpBasics
+		_dumpMoods
+
+	def _dumpHeader
+		print
+		print this
+		print
+
+	def _dumpBasics
+		print 'Experiments:'
+		for exp in _experiments.values, print '[_indent][exp]'
+		print
+		print 'Results:'
+		for res in _results.values, print '[_indent][res]'
+		print
+
+	def _dumpMoods
+		print 'Mood History:'
+		print '[_indent][.moodHistory]'
+		print
+		print 'Mood Counts:'
+		moods = .moodCounts.toList
+		moods.sort(do(a as KeyValuePair<of Mood, int>, b as KeyValuePair<of Mood, int>)=b.value.compareTo(a.value))
+		for mood in moods, print '[_indent][mood.value.toString.padLeft(2)] - [mood.key]'
+
+
+class RandomAgent inherits Agent
+	"""
+	Picks experiments at random.
+	Can be used to test environments and
+	also to provide a baseline of performance vs. intelligent agents.
+	"""
+
+	var _experimentsList as List<of Experiment>
+
+	cue init(env as Environment)
+		base.init(env)
+		.experiment('e1', false)
+		.experiment('e2', false)
+		_experimentsList = _experiments.values.toList
+
+	def interact is override
+		exp = _experimentsList.random
+		result = _environment.enact(exp)
+		n = 0
+		if int.tryParse(result.label[1:], out n)
+			if n % 2 == 0, _mood = Mood.Pleased
+			else, _mood = Mood.Pained
+		else
+			_mood = Mood.Frustrated
+
+
+class Agent40 inherits Agent
+	"""
+	Lesson 4
+	Two step self programming.
+	"""
+
+	var _interactions = Dictionary<of String, Interaction>()
+	var _previousSuperInteraction as CompositeInteraction?
+	var _lastSuperInteraction as CompositeInteraction?
+	var _lastEnactedInteraction as Interaction?
+
+	cue init(environment as Environment)
+		base.init(environment)
+		.initPrimitives
+
+	def initPrimitives
+		e1, e2 = .experiment('e1', false), .experiment('e2', false)
+		r1, r2 = .result('r1'), .result('r2')
+		i11 = .primitiveInteraction(e1, r1, -1)
+		i12 = .primitiveInteraction(e1, r2, +1)
+		i21 = .primitiveInteraction(e2, r1, -1)
+		i22 = .primitiveInteraction(e2, r2, +1)
+		e1.intendedInteraction = i12
+		e2.intendedInteraction = i22
+		CobraCore.noOp(i11, i21)
+
+	def primitiveInteraction(exp as Experiment, res as Result, valence as int? = nil) as PrimitiveInteraction
+		""" Return the primitive interaction with the given experiment+result, creating it if necessary. Cached. Valence is updated. """
+		label = PrimitiveInteraction.labelFor(exp, res)
+		if not _interactions.containsKey(label), _interactions[label] = PrimitiveInteraction(exp, res)
+		interaction = _interactions[label] to PrimitiveInteraction
+		if valence, interaction.valence = valence
+		return interaction
 
 	def printStepEnd
 		if true
 			print 'previousSuperInteraction: [_previousSuperInteraction]'
 			print 'lastSuperInteraction:     [_lastSuperInteraction]'
 			print 'lastEnactedInteraction:   [_lastEnactedInteraction]'
-		print 'End [.clock]: [.mood]'
+		base.printStepEnd
 
-	def interact
+	def interact is override
 		anticipations = .anticipate
 		experiment = .selectExperiment(anticipations)
 		intendedInteraction = experiment.intendedInteraction to !
@@ -421,6 +468,17 @@ class Agent40 inherits BaseObject
 					print 'activated [interaction]'
 		return activatedInteractions
 
+	def dump is override
+		_dumpHeader
+		_dumpBasics
+		_dumpInteractions
+		_dumpMoods
+
+	def _dumpInteractions
+		print 'Interactions:'
+		for interaction in _interactions.values, print '[_indent][interaction]'
+		print
+
 
 class Anticipation inherits BaseObject
 
@@ -521,7 +579,6 @@ class Environment40 inherits Environment
 			result = Result('r1')
 		_penultimateExperiment = .previousExperiment
 		_previousExperiment = experiment
-		trace experiment, result
 		return result
 
 
