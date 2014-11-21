@@ -56,6 +56,7 @@ class Experiment inherits BaseObject
 		assert Experiment('e1', false) <> Experiment('e2', false)
 
 	cue init(label as String, isAbstract as bool)
+		require label.length > 0
 		base.init
 		_label, _isAbstract = label, isAbstract
 		
@@ -87,6 +88,7 @@ class Result inherits BaseObject
 		assert Result('r1') <> Result('r2')
 
 	cue init(label as String)
+		require label.length > 0
 		base.init
 		_label = label
 		
@@ -177,7 +179,7 @@ class CompositeInteraction inherits Interaction
 
 
 enum Mood
-	SelfSatisfied, Frustrated, Bored, Pained, Pleased
+	None, SelfSatisfied, Frustrated, Bored, Pained, Pleased
 
 
 class Agent inherits BaseObject is abstract
